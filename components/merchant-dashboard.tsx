@@ -1,6 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+
+const RAZORPAYX_STORAGE_KEY = "mudrapay-resolver-razorpayx"
+
+interface RazorpayXCredentials {
+  keyId: string
+  keySecret: string
+  accountNumber: string
+}
 
 interface MerchantDashboardProps {
   walletAddress: string
@@ -9,6 +17,51 @@ interface MerchantDashboardProps {
 
 export default function MerchantDashboard({ walletAddress, onLogout }: MerchantDashboardProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "orders" | "settings">("overview")
+
+  // RazorpayX credentials (persisted in localStorage only)
+  const [razorpayx, setRazorpayx] = useState<RazorpayXCredentials>({
+    keyId: "",
+    keySecret: "",
+    accountNumber: "",
+  })
+  const [rpxSaved, setRpxSaved] = useState(false)
+  const [rpxShowSecret, setRpxShowSecret] = useState(false)
+  const [rpxEditing, setRpxEditing] = useState(false)
+
+  // Load credentials from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(RAZORPAYX_STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as RazorpayXCredentials
+        setRazorpayx(parsed)
+        if (parsed.keyId && parsed.keySecret && parsed.accountNumber) {
+          setRpxSaved(true)
+        }
+      }
+    } catch {
+      // ignore corrupt data
+    }
+  }, [])
+
+  const saveRazorpayXCredentials = () => {
+    localStorage.setItem(RAZORPAYX_STORAGE_KEY, JSON.stringify(razorpayx))
+    setRpxSaved(true)
+    setRpxEditing(false)
+  }
+
+  const clearRazorpayXCredentials = () => {
+    localStorage.removeItem(RAZORPAYX_STORAGE_KEY)
+    setRazorpayx({ keyId: "", keySecret: "", accountNumber: "" })
+    setRpxSaved(false)
+    setRpxEditing(false)
+    setRpxShowSecret(false)
+  }
+
+  const maskValue = (val: string) => {
+    if (val.length <= 6) return "•".repeat(val.length)
+    return val.slice(0, 4) + "•".repeat(val.length - 6) + val.slice(-2)
+  }
 
   return (
     <div className="w-full max-w-sm min-h-screen flex flex-col bg-background">
@@ -176,6 +229,140 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
         {activeTab === "settings" && (
           <div className="space-y-4 animate-fade-in">
             <h3 className="text-sm font-semibold text-foreground">Resolver Settings</h3>
+
+            {/* RazorpayX Credentials */}
+            <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground">RazorpayX Credentials</h4>
+                    <p className="text-xs text-muted-foreground">Used for INR payouts</p>
+                  </div>
+                </div>
+                {rpxSaved && (
+                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-medium rounded-full">
+                    Saved
+                  </span>
+                )}
+              </div>
+
+              {rpxSaved && !rpxEditing ? (
+                /* Saved view — show masked values */
+                <div className="space-y-2.5">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Key ID</span>
+                    <span className="font-mono text-foreground text-xs">{maskValue(razorpayx.keyId)}</span>
+                  </div>
+                  <div className="h-px bg-border" />
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Key Secret</span>
+                    <span className="font-mono text-foreground text-xs">{maskValue(razorpayx.keySecret)}</span>
+                  </div>
+                  <div className="h-px bg-border" />
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Account No.</span>
+                    <span className="font-mono text-foreground text-xs">{maskValue(razorpayx.accountNumber)}</span>
+                  </div>
+                  <button
+                    onClick={() => setRpxEditing(true)}
+                    className="w-full mt-2 py-2 border border-border text-foreground rounded-lg text-xs font-medium hover:bg-muted transition"
+                  >
+                    Edit Credentials
+                  </button>
+                </div>
+              ) : (
+                /* Edit view — input fields */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">RazorpayX Key ID</label>
+                    <input
+                      type="text"
+                      value={razorpayx.keyId}
+                      onChange={(e) => setRazorpayx((p) => ({ ...p, keyId: e.target.value }))}
+                      placeholder="rzp_live_XXXXXXXXXXXXXX"
+                      className="w-full px-3 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">RazorpayX Key Secret</label>
+                    <div className="relative">
+                      <input
+                        type={rpxShowSecret ? "text" : "password"}
+                        value={razorpayx.keySecret}
+                        onChange={(e) => setRazorpayx((p) => ({ ...p, keySecret: e.target.value }))}
+                        placeholder="••••••••••••••••••••"
+                        className="w-full px-3 py-2.5 pr-9 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-xs font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setRpxShowSecret(!rpxShowSecret)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {rpxShowSecret ? (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">RazorpayX Account Number</label>
+                    <input
+                      type="text"
+                      value={razorpayx.accountNumber}
+                      onChange={(e) => setRazorpayx((p) => ({ ...p, accountNumber: e.target.value }))}
+                      placeholder="acc_XXXXXXXXXXXXXX"
+                      className="w-full px-3 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={saveRazorpayXCredentials}
+                      disabled={!razorpayx.keyId.trim() || !razorpayx.keySecret.trim() || !razorpayx.accountNumber.trim()}
+                      className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Save Securely
+                    </button>
+                    {rpxSaved && (
+                      <button
+                        onClick={() => { setRpxEditing(false) }}
+                        className="px-4 py-2.5 border border-border text-foreground rounded-lg text-xs font-medium hover:bg-muted transition"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+
+                  {rpxSaved && (
+                    <button
+                      onClick={clearRazorpayXCredentials}
+                      className="w-full py-2 border border-destructive/30 text-destructive rounded-lg text-[11px] font-medium hover:bg-destructive/5 transition"
+                    >
+                      Remove Stored Credentials
+                    </button>
+                  )}
+
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Credentials are stored locally on your device only and never sent to our servers.
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Pricing */}
             <div className="bg-card border border-border rounded-xl p-4 space-y-3">
