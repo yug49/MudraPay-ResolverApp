@@ -53,3 +53,4 @@ public/static/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+.resolver-bot-key

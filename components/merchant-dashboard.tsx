@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 
 const RAZORPAYX_STORAGE_KEY = "mudrapay-resolver-razorpayx"
 
@@ -8,6 +8,18 @@ interface RazorpayXCredentials {
   keyId: string
   keySecret: string
   accountNumber: string
+}
+
+type BotStatus = "offline" | "starting" | "online" | "error" | "stopping"
+
+interface BotState {
+  status: BotStatus
+  port: number | null
+  pid: number | null
+  walletAddress: string | null
+  startedAt: number | null
+  error: string | null
+  logs: string[]
 }
 
 interface MerchantDashboardProps {
@@ -27,6 +39,107 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
   const [rpxSaved, setRpxSaved] = useState(false)
   const [rpxShowSecret, setRpxShowSecret] = useState(false)
   const [rpxEditing, setRpxEditing] = useState(false)
+
+  // Bot state
+  const [botState, setBotState] = useState<BotState>({
+    status: "offline",
+    port: null,
+    pid: null,
+    walletAddress: null,
+    startedAt: null,
+    error: null,
+    logs: [],
+  })
+  const [showBotLogs, setShowBotLogs] = useState(false)
+  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Poll bot status when online or starting
+  const pollBotStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/bot/status")
+      if (res.ok) {
+        const data = await res.json()
+        setBotState(data)
+        // Stop polling if offline or error
+        if (data.status === "offline" || data.status === "error") {
+          if (statusPollRef.current) {
+            clearInterval(statusPollRef.current)
+            statusPollRef.current = null
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // Check bot status on mount
+  useEffect(() => {
+    pollBotStatus()
+  }, [pollBotStatus])
+
+  // Start polling when bot is online/starting
+  useEffect(() => {
+    if (botState.status === "online" || botState.status === "starting") {
+      if (!statusPollRef.current) {
+        statusPollRef.current = setInterval(pollBotStatus, 5000)
+      }
+    }
+    return () => {
+      if (statusPollRef.current) {
+        clearInterval(statusPollRef.current)
+        statusPollRef.current = null
+      }
+    }
+  }, [botState.status, pollBotStatus])
+
+  // Go Online handler
+  const handleGoOnline = async () => {
+    if (!rpxSaved) {
+      setActiveTab("settings")
+      return
+    }
+
+    setBotState((prev) => ({ ...prev, status: "starting", error: null, logs: [] }))
+
+    try {
+      const res = await fetch("/api/bot/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          razorpayxKeyId: razorpayx.keyId,
+          razorpayxKeySecret: razorpayx.keySecret,
+          razorpayxAccountNumber: razorpayx.accountNumber,
+        }),
+      })
+      const data = await res.json()
+      setBotState(data)
+
+      // Start polling
+      if (!statusPollRef.current) {
+        statusPollRef.current = setInterval(pollBotStatus, 3000)
+      }
+    } catch (err: unknown) {
+      setBotState((prev) => ({
+        ...prev,
+        status: "error",
+        error: err instanceof Error ? err.message : "Failed to start bot",
+      }))
+    }
+  }
+
+  // Go Offline handler
+  const handleGoOffline = async () => {
+    setBotState((prev) => ({ ...prev, status: "stopping" }))
+
+    try {
+      const res = await fetch("/api/bot/stop", { method: "POST" })
+      const data = await res.json()
+      setBotState(data)
+    } catch {
+      setBotState((prev) => ({ ...prev, status: "offline" }))
+    }
+  }
 
   // Load credentials from localStorage on mount
   useEffect(() => {
@@ -78,9 +191,43 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-xs text-emerald-500 font-medium">Active</span>
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-full ${
+              botState.status === "online"
+                ? "bg-emerald-500/10 border-emerald-500/20"
+                : botState.status === "starting" || botState.status === "stopping"
+                ? "bg-amber-500/10 border-amber-500/20"
+                : botState.status === "error"
+                ? "bg-red-500/10 border-red-500/20"
+                : "bg-muted border-border"
+            }`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                botState.status === "online"
+                  ? "bg-emerald-500 animate-pulse"
+                  : botState.status === "starting" || botState.status === "stopping"
+                  ? "bg-amber-500 animate-pulse"
+                  : botState.status === "error"
+                  ? "bg-red-500"
+                  : "bg-muted-foreground"
+              }`} />
+              <span className={`text-xs font-medium ${
+                botState.status === "online"
+                  ? "text-emerald-500"
+                  : botState.status === "starting" || botState.status === "stopping"
+                  ? "text-amber-500"
+                  : botState.status === "error"
+                  ? "text-red-500"
+                  : "text-muted-foreground"
+              }`}>
+                {botState.status === "online"
+                  ? `Online${botState.port ? ` :${botState.port}` : ""}`
+                  : botState.status === "starting"
+                  ? "Starting..."
+                  : botState.status === "stopping"
+                  ? "Stopping..."
+                  : botState.status === "error"
+                  ? "Error"
+                  : "Offline"}
+              </span>
             </div>
             <button
               onClick={onLogout}
@@ -166,14 +313,42 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
             {/* Quick Actions */}
             <h3 className="text-sm font-semibold text-foreground">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-3">
-              <button className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-xl hover:border-primary/30 transition">
-                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                  <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <span className="text-xs font-medium text-foreground">Go Online</span>
-              </button>
+              {/* Go Online / Go Offline Button */}
+              {botState.status === "online" ? (
+                <button
+                  onClick={handleGoOffline}
+                  className="flex flex-col items-center gap-2 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl hover:bg-red-500/5 hover:border-red-500/20 transition group"
+                >
+                  <div className="w-10 h-10 bg-emerald-500/10 group-hover:bg-red-500/10 rounded-xl flex items-center justify-center transition">
+                    <svg className="w-5 h-5 text-emerald-500 group-hover:text-red-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 5.636a9 9 0 010 12.728M5.636 5.636a9 9 0 000 12.728M12 12v.01" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-medium text-emerald-500 group-hover:text-red-500 transition">Go Offline</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleGoOnline}
+                  disabled={botState.status === "starting" || botState.status === "stopping"}
+                  className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-xl hover:border-primary/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    {botState.status === "starting" ? (
+                      <svg className="w-5 h-5 text-primary animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-foreground">
+                    {botState.status === "starting" ? "Starting..." : "Go Online"}
+                  </span>
+                </button>
+              )}
               <button className="flex flex-col items-center gap-2 p-4 bg-card border border-border rounded-xl hover:border-primary/30 transition">
                 <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
                   <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -200,6 +375,85 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
               </button>
             </div>
 
+            {/* Bot Status Card */}
+            {(botState.status !== "offline" || botState.error) && (
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3">Bot Service</h3>
+                <div className={`bg-card border rounded-xl p-4 space-y-3 ${
+                  botState.status === "error" ? "border-red-500/30" : "border-border"
+                }`}>
+                  {/* Status Row */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        botState.status === "online" ? "bg-emerald-500 animate-pulse" :
+                        botState.status === "starting" ? "bg-amber-500 animate-pulse" :
+                        botState.status === "error" ? "bg-red-500" :
+                        "bg-muted-foreground"
+                      }`} />
+                      <span className="text-sm font-medium text-foreground capitalize">{botState.status}</span>
+                    </div>
+                    {botState.port && (
+                      <span className="text-xs font-mono text-muted-foreground">Port {botState.port}</span>
+                    )}
+                  </div>
+
+                  {/* Wallet Address */}
+                  {botState.walletAddress && (
+                    <div className="text-xs text-muted-foreground">
+                      <span className="text-foreground/60">Wallet:</span>{" "}
+                      <span className="font-mono">{botState.walletAddress.slice(0, 6)}...{botState.walletAddress.slice(-4)}</span>
+                    </div>
+                  )}
+
+                  {/* Uptime */}
+                  {botState.startedAt && botState.status === "online" && (
+                    <div className="text-xs text-muted-foreground">
+                      <span className="text-foreground/60">Uptime:</span>{" "}
+                      {Math.floor((Date.now() - botState.startedAt) / 60000)} min
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {botState.error && (
+                    <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-2.5 mt-2">
+                      <p className="text-xs text-red-500">{botState.error}</p>
+                    </div>
+                  )}
+
+                  {/* Credentials missing warning */}
+                  {!rpxSaved && botState.status === "offline" && (
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-2.5">
+                      <p className="text-xs text-amber-500">
+                        Set RazorpayX credentials in Settings before going online.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Logs Toggle */}
+                  <button
+                    onClick={() => setShowBotLogs(!showBotLogs)}
+                    className="w-full text-left text-xs text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${showBotLogs ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    {showBotLogs ? "Hide" : "Show"} Logs ({botState.logs.length})
+                  </button>
+
+                  {showBotLogs && botState.logs.length > 0 && (
+                    <div className="bg-black/80 rounded-lg p-3 max-h-48 overflow-y-auto">
+                      {botState.logs.slice(-50).map((line, i) => (
+                        <p key={i} className="text-[10px] font-mono text-emerald-400/80 leading-relaxed whitespace-pre-wrap break-all">
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Recent Activity */}
             <div className="mt-4">
               <h3 className="text-sm font-semibold text-foreground mb-3">Recent Activity</h3>
@@ -208,7 +462,11 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
                 <p className="text-sm text-muted-foreground">No recent activity</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Go online to start receiving orders</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                  {botState.status === "online"
+                    ? "Listening for incoming orders..."
+                    : "Go online to start receiving orders"}
+                </p>
               </div>
             </div>
           </div>
