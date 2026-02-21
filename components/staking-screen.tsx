@@ -204,7 +204,17 @@ export default function StakingScreen({ walletAddress, onStakeComplete, onBack }
       </div>
 
       {/* Bottom Action */}
-      <div className="px-6 py-4 border-t border-border bg-background">
+      <div className="px-6 py-4 border-t border-border bg-background space-y-2">
+        {/* Dev-only skip button */}
+        <button
+          onClick={onStakeComplete}
+          className="w-full py-2.5 border border-dashed border-amber-500/40 text-amber-500 rounded-lg text-xs font-medium hover:bg-amber-500/5 transition flex items-center justify-center gap-1.5"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+          Skip staking (dev only)
+        </button>
         <button
           onClick={handleStake}
           disabled={isStaking || parsedAmount < MIN_STAKE_AMOUNT}
