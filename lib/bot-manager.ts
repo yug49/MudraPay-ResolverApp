@@ -63,7 +63,7 @@ let botState: BotState = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Check if a TCP port is available */
+/** Check if a TCP port is available (checks all interfaces to match Express default) */
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = net.createServer()
@@ -71,7 +71,10 @@ function isPortAvailable(port: number): Promise<boolean> {
     server.once("listening", () => {
       server.close(() => resolve(true))
     })
-    server.listen(port, "127.0.0.1")
+    // Listen on 0.0.0.0 (all interfaces) — Express defaults to :: which
+    // also covers 0.0.0.0 on dual-stack systems. Checking 127.0.0.1 only
+    // would miss ports already bound on :: and cause EADDRINUSE at runtime.
+    server.listen(port, "0.0.0.0")
   })
 }
 
