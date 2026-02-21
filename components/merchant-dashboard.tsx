@@ -457,12 +457,26 @@ export default function MerchantDashboard({ walletAddress, onLogout, onDisconnec
                   </button>
 
                   {showBotLogs && botState.logs.length > 0 && (
-                    <div className="bg-black/80 rounded-lg p-3 max-h-48 overflow-y-auto">
-                      {botState.logs.slice(-50).map((line, i) => (
-                        <p key={i} className="text-[10px] font-mono text-emerald-400/80 leading-relaxed whitespace-pre-wrap break-all">
-                          {line}
-                        </p>
-                      ))}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          const text = botState.logs.join("\n")
+                          navigator.clipboard.writeText(text).catch(() => {})
+                        }}
+                        className="absolute top-2 right-2 z-10 p-1.5 bg-white/10 hover:bg-white/20 rounded-md transition group"
+                        title="Copy logs"
+                      >
+                        <svg className="w-3.5 h-3.5 text-emerald-400/60 group-hover:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </button>
+                      <div className="bg-black/80 rounded-lg p-3 max-h-48 overflow-y-auto">
+                        {botState.logs.slice(-50).map((line, i) => (
+                          <p key={i} className="text-[10px] font-mono text-emerald-400/80 leading-relaxed whitespace-pre-wrap break-all">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
