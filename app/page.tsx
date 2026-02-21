@@ -99,6 +99,16 @@ export default function Home() {
     setCurrentScreen("login")
   }
 
+  const handleDisconnectWallet = () => {
+    // Clear wallet and downstream state, send user back to KYC wallet step
+    updateUserState({
+      walletAddress: "",
+      kycApproved: false,
+      staked: false,
+    })
+    setCurrentScreen("kyc-form")
+  }
+
   const renderScreen = () => {
     switch (currentScreen) {
       case "loading":
@@ -137,6 +147,7 @@ export default function Home() {
           <MerchantDashboard
             walletAddress={userState.walletAddress || "0x..."}
             onLogout={handleLogout}
+            onDisconnectWallet={handleDisconnectWallet}
           />
         )
 

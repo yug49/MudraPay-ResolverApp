@@ -98,6 +98,10 @@ export default function KYCForm({ onSubmit, onBack }: KYCFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isConnecting, setIsConnecting] = useState(false)
 
+  // Account selection modal state
+  const [showAccountPicker, setShowAccountPicker] = useState(false)
+  const [availableAccounts, setAvailableAccounts] = useState<string[]>([])
+
   const totalSteps = 5
 
   const updateField = (field: keyof KYCFormData, value: any) => {
@@ -249,23 +253,37 @@ export default function KYCForm({ onSubmit, onBack }: KYCFormProps) {
 
     try {
       if (typeof window !== "undefined" && (window as any).ethereum) {
-        const accounts = await (window as any).ethereum.request({
-          method: "eth_requestAccounts",
+        // Force MetaMask to show the account picker every time
+        await (window as any).ethereum.request({
+          method: "wallet_requestPermissions",
+          params: [{ eth_accounts: {} }],
         })
-        if (accounts && accounts.length > 0) {
+
+        // Now get the permitted accounts
+        const accounts: string[] = await (window as any).ethereum.request({
+          method: "eth_accounts",
+        })
+
+        if (accounts && accounts.length > 1) {
+          // Multiple accounts — show picker
+          setAvailableAccounts(accounts)
+          setShowAccountPicker(true)
+          setIsConnecting(false)
+          return
+        } else if (accounts && accounts.length === 1) {
           updateField("walletAddress", accounts[0])
           updateField("walletConnected", true)
         }
       } else {
-        // Simulate wallet connection for demo
-        setTimeout(() => {
-          const mockAddress = "0x" + Array.from({ length: 40 }, () => 
-            Math.floor(Math.random() * 16).toString(16)
-          ).join("")
-          updateField("walletAddress", mockAddress)
-          updateField("walletConnected", true)
-          setIsConnecting(false)
-        }, 1500)
+        // Simulate wallet connection for demo — show fake account picker
+        const mockAccounts = [
+          "0x" + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join(""),
+          "0x" + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join(""),
+          "0x" + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join(""),
+        ]
+        setAvailableAccounts(mockAccounts)
+        setShowAccountPicker(true)
+        setIsConnecting(false)
         return
       }
     } catch (err) {
@@ -273,6 +291,18 @@ export default function KYCForm({ onSubmit, onBack }: KYCFormProps) {
     }
 
     setIsConnecting(false)
+  }
+
+  const selectAccount = (account: string) => {
+    updateField("walletAddress", account)
+    updateField("walletConnected", true)
+    setShowAccountPicker(false)
+    setAvailableAccounts([])
+  }
+
+  const disconnectWallet = () => {
+    updateField("walletAddress", "")
+    updateField("walletConnected", false)
   }
 
   const renderProgressBar = () => (
@@ -599,17 +629,40 @@ export default function KYCForm({ onSubmit, onBack }: KYCFormProps) {
               </div>
 
               {formData.walletConnected ? (
-                <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                  <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                    <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                    <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted-foreground">Connected Wallet</p>
+                      <p className="text-sm font-mono text-foreground truncate">
+                        {formData.walletAddress}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-muted-foreground">Connected Wallet</p>
-                    <p className="text-sm font-mono text-foreground truncate">
-                      {formData.walletAddress}
-                    </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={disconnectWallet}
+                      className="flex-1 py-2.5 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg text-xs font-semibold hover:bg-destructive/20 transition flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      Disconnect
+                    </button>
+                    <button
+                      onClick={connectWallet}
+                      disabled={isConnecting}
+                      className="flex-1 py-2.5 bg-muted text-foreground border border-border rounded-lg text-xs font-semibold hover:bg-muted/80 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Switch Account
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -638,6 +691,46 @@ export default function KYCForm({ onSubmit, onBack }: KYCFormProps) {
                 This wallet will be set as your primary wallet for all resolver operations.
               </p>
             </div>
+
+            {/* Account Selection Modal */}
+            {showAccountPicker && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-xs mx-4 shadow-xl animate-slide-up">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-base font-bold text-foreground">Select Account</h3>
+                    <button
+                      onClick={() => { setShowAccountPicker(false); setAvailableAccounts([]); }}
+                      className="p-1 hover:bg-muted rounded-lg transition"
+                    >
+                      <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">Choose which wallet account to connect with the Resolver App.</p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {availableAccounts.map((acct, idx) => (
+                      <button
+                        key={acct}
+                        onClick={() => selectAccount(acct)}
+                        className="w-full flex items-center gap-3 p-3 bg-muted/50 hover:bg-primary/10 border border-border hover:border-primary/30 rounded-xl transition group"
+                      >
+                        <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-xs font-bold text-primary group-hover:bg-primary/20 transition">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[10px] text-muted-foreground">Account {idx + 1}</p>
+                          <p className="text-xs font-mono text-foreground truncate">{acct}</p>
+                        </div>
+                        <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Selfie */}
             <div className="bg-card border border-border rounded-xl p-5 space-y-4">

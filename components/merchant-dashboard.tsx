@@ -25,9 +25,10 @@ interface BotState {
 interface MerchantDashboardProps {
   walletAddress: string
   onLogout: () => void
+  onDisconnectWallet: () => void
 }
 
-export default function MerchantDashboard({ walletAddress, onLogout }: MerchantDashboardProps) {
+export default function MerchantDashboard({ walletAddress, onLogout, onDisconnectWallet }: MerchantDashboardProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "orders" | "settings">("overview")
 
   // RazorpayX credentials (persisted in localStorage only)
@@ -279,9 +280,23 @@ export default function MerchantDashboard({ walletAddress, onLogout }: MerchantD
             <p className="text-[10px] text-muted-foreground">Primary Wallet</p>
             <p className="text-xs font-mono text-foreground truncate">{walletAddress}</p>
           </div>
-          <button className="p-1.5 hover:bg-muted rounded transition">
+          <button
+            onClick={() => {
+              if (typeof navigator !== "undefined" && navigator.clipboard) {
+                navigator.clipboard.writeText(walletAddress)
+              }
+            }}
+            className="p-1.5 hover:bg-muted rounded transition" title="Copy address">
             <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+          <button
+            onClick={onDisconnectWallet}
+            className="p-1.5 hover:bg-destructive/10 rounded transition group" title="Disconnect wallet"
+          >
+            <svg className="w-3.5 h-3.5 text-muted-foreground group-hover:text-destructive transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </button>
         </div>
